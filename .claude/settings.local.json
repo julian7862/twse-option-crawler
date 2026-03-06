@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(python3.13:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m unittest:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

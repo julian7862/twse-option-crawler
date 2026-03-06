@@ -1,0 +1,31 @@
+name: TAIFEX Crawler
+
+on:
+  schedule:
+    # Run daily at 6 PM Taiwan time (10 AM UTC)
+    - cron: '0 10 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Run crawler
+      env:
+        MONGO_URI: ${{ secrets.MONGO_URI }}
+        MONGO_DB: ${{ secrets.MONGO_DB }}
+        MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
+      run: |
+        python main.py
