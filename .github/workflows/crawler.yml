@@ -1,0 +1,38 @@
+name: TAIFEX Crawler
+
+on:
+  schedule:
+    # Taiwan Time 06:30 (UTC 22:30 previous day) - After broker system maintenance
+    - cron: '30 22 * * *'
+    # Taiwan Time 08:40 (UTC 00:40) - Before day session opens
+    - cron: '40 0 * * *'
+    # Taiwan Time 14:55 (UTC 06:55) - Before night session opens
+    - cron: '55 6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run crawler
+      env:
+        MONGO_URI: ${{ secrets.MONGO_URI }}
+        MONGO_DB: ${{ secrets.MONGO_DB }}
+        MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
+        TAIFEX_DAY_URL: ${{ secrets.TAIFEX_DAY_URL }}
+        TAIFEX_NIGHT_URL: ${{ secrets.TAIFEX_NIGHT_URL }}
+      run: |
+        python main.py
