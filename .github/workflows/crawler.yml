@@ -2,12 +2,10 @@ name: TAIFEX Crawler
 
 on:
   schedule:
-    # Taiwan Time 06:30 (UTC 22:30 previous day) - After broker system maintenance
-    - cron: '30 22 * * *'
-    # Taiwan Time 08:40 (UTC 00:40) - Before day session opens
-    - cron: '40 0 * * *'
-    # Taiwan Time 14:55 (UTC 06:55) - Before night session opens
-    - cron: '55 6 * * *'
+    # Taiwan Time 07:00 (UTC 23:00 previous day) - Before day session opens
+    - cron: '0 23 * * *'
+    # Taiwan Time 14:00 (UTC 06:00) - Before night session opens
+    - cron: '0 6 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
