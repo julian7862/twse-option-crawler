@@ -40,11 +40,14 @@
 2. 點擊你的 cluster 的 **Connect** 按鈕
 3. 選擇 **Connect your application**
 4. 選擇 Driver: **Python** / Version: **3.12 or later**
-5. 複製連線字串，類似：
+5. 複製連線字串（範例格式）：
    ```
-   mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+   mongodb+srv://USERNAME:PASSWORD@cluster-name.abc123.mongodb.net/
    ```
-6. 將 `<username>` 和 `<password>` 替換成你的實際帳密
+
+   ⚠️ **重要**：MongoDB Atlas 會提供你專屬的連線字串，請直接複製使用
+
+6. 將連線字串中的 `<username>` 和 `<password>` 替換成你在步驟 3 設定的實際帳密
 
 ### 步驟 6: 設定 .env
 
@@ -54,7 +57,8 @@ cp .env.example .env
 
 編輯 `.env`：
 ```env
-MONGO_URI=mongodb+srv://taifex_user:your_password@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+# 將下方的連線字串替換成你從 MongoDB Atlas 複製的實際連線字串
+MONGO_URI=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@your-cluster.abc123.mongodb.net/
 MONGO_DB=market_data
 MONGO_COLLECTION=taifex_option_daily
 TAIFEX_DAY_URL=https://www.taifex.com.tw/cht/3/optDailyMarketExcel
@@ -190,7 +194,8 @@ python main.py
 ### 使用 mongosh
 
 ```bash
-mongosh "your_connection_string"
+# 替換成你的實際連線字串
+mongosh "mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@your-cluster.abc123.mongodb.net/"
 
 use market_data
 db.taifex_option_daily.find().limit(1).pretty()
