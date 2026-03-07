@@ -6,19 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-# Try to load .env file if it exists (for local development)
-# In CI/CD, this will be skipped and use actual environment variables
-try:
-    from dotenv import load_dotenv
-    env_file = Path(__file__).parent.parent / ".env"
-    if env_file.exists():
-        load_dotenv(env_file)
-except ImportError:
-    pass  # python-dotenv not installed, use system env vars only
-
-DEFAULT_DAY_URL = "https://www.taifex.com.tw/cht/3/optDailyMarketExcel"
-DEFAULT_NIGHT_URL = DEFAULT_DAY_URL + "?marketCode=1"
-
 
 @dataclass(frozen=True)
 class CrawlerConfig:
@@ -36,17 +23,45 @@ class CrawlerConfig:
         Load configuration from environment variables.
 
         Supports:
-        - Local development: Reads from .env file (loaded at module level)
+        - Local development: Reads from .env file
         - CI/CD: Reads from system environment variables directly
+
+        All values must be set in environment variables or .env file.
         """
+        # Try to load .env file if it exists (for local development)
+        try:
+            from dotenv import load_dotenv
+            env_file = Path(__file__).parent.parent / ".env"
+            if env_file.exists():
+                load_dotenv(env_file)
+        except ImportError:
+            pass  # python-dotenv not installed, use system env vars only
+
+        # Read from environment variables
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
             raise RuntimeError("MONGO_URI environment variable is required")
 
+        mongo_db = os.getenv("MONGO_DB")
+        if not mongo_db:
+            raise RuntimeError("MONGO_DB environment variable is required")
+
+        mongo_collection = os.getenv("MONGO_COLLECTION")
+        if not mongo_collection:
+            raise RuntimeError("MONGO_COLLECTION environment variable is required")
+
+        day_url = os.getenv("TAIFEX_DAY_URL")
+        if not day_url:
+            raise RuntimeError("TAIFEX_DAY_URL environment variable is required")
+
+        night_url = os.getenv("TAIFEX_NIGHT_URL")
+        if not night_url:
+            raise RuntimeError("TAIFEX_NIGHT_URL environment variable is required")
+
         return cls(
             mongo_uri=mongo_uri,
-            mongo_db=os.getenv("MONGO_DB") or "market_data",
-            mongo_collection=os.getenv("MONGO_COLLECTION") or "taifex_option_daily",
-            day_url=os.getenv("TAIFEX_DAY_URL") or DEFAULT_DAY_URL,
-            night_url=os.getenv("TAIFEX_NIGHT_URL") or DEFAULT_NIGHT_URL,
+            mongo_db=mongo_db,
+            mongo_collection=mongo_collection,
+            day_url=day_url,
+            night_url=night_url,
         )
