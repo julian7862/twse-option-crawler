@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numbers
 from typing import Protocol
 
 import pandas as pd
@@ -114,8 +115,8 @@ class TaifexCrawlerService:
         # Extract unique month values and create records
         records = []
         for value in df[expiry_col].dropna().unique():
-            # Convert to int if it's a float (e.g., 202603.0 -> 202603)
-            if isinstance(value, float):
+            # Convert float-like numeric values to int (e.g., 202603.0 -> 202603)
+            if isinstance(value, numbers.Real) and float(value).is_integer():
                 value = int(value)
             records.append({"期貨月份": value})
 
