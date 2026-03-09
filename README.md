@@ -137,7 +137,7 @@ MONGO_URI=mongodb://localhost:27017
 
 **MongoDB Atlas（雲端）：**
 ```env
-MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
+MONGO_URI=<paste-your-atlas-connection-string-here>
 ```
 
 ## 🧪 執行測試
