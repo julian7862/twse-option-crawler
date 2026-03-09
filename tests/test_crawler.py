@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from unittest import TestCase, main
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
@@ -11,10 +11,11 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config import CrawlerConfig
+from src.fetcher import TaifexTableFetcher
 from src.models import MarketSessionData
+from src.repository import MongoMarketRepository
 from src.service import TaifexCrawlerService
 from src.transformer import DataTransformer
-from src.repository import MongoMarketRepository
 
 
 class FakeFetcher:
@@ -33,12 +34,24 @@ class FakeFetcher:
     def future_fetch_table(self, url, is_night):
         df = pd.DataFrame(
             [
-                {"契約": "TX", "到期月份(週別)": 202603, "開盤價": 31730,
-                 "最高價": 32111, "最低價": 31124, "最後成交價": 31786,
-                 "交易日": pd.Timestamp("2025-01-01")},
-                {"契約": "TX", "到期月份(週別)": 202604, "開盤價": 31808,
-                 "最高價": 32205, "最低價": 31227, "最後成交價": 31880,
-                 "交易日": pd.Timestamp("2025-01-01")},
+                {
+                    "契約": "TX",
+                    "到期月份(週別)": 202603,
+                    "開盤價": 31730,
+                    "最高價": 32111,
+                    "最低價": 31124,
+                    "最後成交價": 31786,
+                    "交易日": pd.Timestamp("2025-01-01"),
+                },
+                {
+                    "契約": "TX",
+                    "到期月份(週別)": 202604.0,
+                    "開盤價": 31808,
+                    "最高價": 32205,
+                    "最低價": 31227,
+                    "最後成交價": 31880,
+                    "交易日": pd.Timestamp("2025-01-01"),
+                },
             ]
         )
         return df, "2025/01/01"
@@ -142,11 +155,65 @@ class CrawlerTests(TestCase):
         # Check that rows contain only 期貨月份
         for row in sessions[0].rows:
             self.assertIn("期貨月份", row)
-            self.assertEqual(len(row), 1)  # Only one field
+            self.assertEqual(len(row), 1)
 
         # Check unique months are extracted
         months = [row["期貨月份"] for row in sessions[0].rows]
         self.assertEqual(set(months), {202603, 202604})
+        for month in months:
+            self.assertIsInstance(month, int)
+
+
+class FetcherParsingTests(TestCase):
+    @patch("src.fetcher.requests.get")
+    def test_future_fetch_table_removes_summary_row_and_normalizes_dash(self, mock_get):
+        html = """
+        <html><body>
+        日期：2025/01/01
+        <table>
+          <tr><th>契約</th><th>到期 月份 (週別)</th><th>開盤價</th><th>最高價</th></tr>
+          <tr><td>TX</td><td>202603</td><td>31730</td><td>-</td></tr>
+          <tr><td>TX</td><td>202604</td><td>31808</td><td>32205</td></tr>
+          <tr><td></td><td>小計</td><td></td><td></td></tr>
+        </table>
+        </body></html>
+        """
+        response = Mock()
+        response.headers = {"content-type": "text/html; charset=utf-8"}
+        response.text = html
+        response.raise_for_status = Mock()
+        mock_get.return_value = response
+
+        df, trade_date = TaifexTableFetcher().future_fetch_table("https://future.example", is_night=False)
+
+        self.assertEqual(trade_date, "2025/01/01")
+        self.assertEqual(len(df), 2)
+        self.assertTrue(pd.isna(df.iloc[0]["最高價"]))
+        self.assertEqual(df.iloc[0]["市場時段"], "日盤")
+
+    @patch("src.fetcher.requests.get")
+    def test_option_fetch_table_parses_night_date_and_sets_session(self, mock_get):
+        html = """
+        <html><body>
+        2025/01/01 15:00 ~ 次日 05:00
+        <table>
+          <tr><th>履約價</th><th>成交量</th></tr>
+          <tr><td>23000</td><td>10</td></tr>
+          <tr><td>合計</td><td>10</td></tr>
+        </table>
+        </body></html>
+        """
+        response = Mock()
+        response.headers = {"content-type": "text/html"}
+        response.text = html
+        response.raise_for_status = Mock()
+        mock_get.return_value = response
+
+        df, trade_date = TaifexTableFetcher().option_fetch_table("https://option.example", is_night=True)
+
+        self.assertEqual(trade_date, "2025/01/01")
+        self.assertEqual(len(df), 1)
+        self.assertEqual(df.iloc[0]["市場時段"], "夜盤")
 
 
 if __name__ == "__main__":
