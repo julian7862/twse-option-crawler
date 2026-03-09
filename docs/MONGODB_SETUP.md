@@ -42,7 +42,7 @@
 4. 選擇 Driver: **Python** / Version: **3.12 or later**
 5. 複製連線字串（範例格式）：
    ```
-   mongodb+srv://USERNAME:PASSWORD@cluster-name.abc123.mongodb.net/
+   mongodb+srv://<your-cluster-host>/
    ```
 
    ⚠️ **重要**：MongoDB Atlas 會提供你專屬的連線字串，請直接複製使用
@@ -58,7 +58,7 @@ cp .env.example .env
 編輯 `.env`：
 ```env
 # 將下方的連線字串替換成你從 MongoDB Atlas 複製的實際連線字串
-MONGO_URI=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@your-cluster.abc123.mongodb.net/
+MONGO_URI=<paste-your-atlas-connection-string-here>
 MONGO_DB=market_data
 MONGO_COLLECTION=taifex_option_daily
 TAIFEX_DAY_URL=https://www.taifex.com.tw/cht/3/optDailyMarketExcel
@@ -134,7 +134,7 @@ TAIFEX_NIGHT_URL=https://www.taifex.com.tw/cht/3/optDailyMarketExcel?marketCode=
 
 ```bash
 # 連線到 Atlas
-mongosh "mongodb+srv://cluster0.xxxxx.mongodb.net/" --username taifex_user
+mongosh "mongodb+srv://<your-cluster-host>/" --username <your-username>
 
 # 或連線到本地
 mongosh
@@ -195,7 +195,7 @@ python main.py
 
 ```bash
 # 替換成你的實際連線字串
-mongosh "mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@your-cluster.abc123.mongodb.net/"
+mongosh "<paste-your-atlas-connection-string-here>"
 
 use market_data
 db.taifex_option_daily.find().limit(1).pretty()
