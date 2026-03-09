@@ -27,6 +27,22 @@ class FakeFetcher:
         )
         return df, "2025/01/01"
 
+    def option_fetch_table(self, url, is_night):
+        return self.fetch_table(url, is_night)
+
+    def future_fetch_table(self, url, is_night):
+        df = pd.DataFrame(
+            [
+                {"契約": "TX", "到期月份(週別)": 202603, "開盤價": 31730,
+                 "最高價": 32111, "最低價": 31124, "最後成交價": 31786,
+                 "交易日": pd.Timestamp("2025-01-01")},
+                {"契約": "TX", "到期月份(週別)": 202604, "開盤價": 31808,
+                 "最高價": 32205, "最低價": 31227, "最後成交價": 31880,
+                 "交易日": pd.Timestamp("2025-01-01")},
+            ]
+        )
+        return df, "2025/01/01"
+
 
 class FakeCollection:
     def __init__(self):
@@ -94,6 +110,43 @@ class CrawlerTests(TestCase):
         self.assertEqual(filt, {"trade_date": "2025/01/01", "session": "day"})
         self.assertTrue(upsert)
         self.assertEqual(payload["$set"]["row_count"], 1)
+
+    def test_option_fetch_returns_correct_data(self):
+        service = TaifexCrawlerService(fetcher=FakeFetcher(), transformer=DataTransformer())
+
+        sessions = service.crawl("https://day.example", "https://night.example")
+
+        self.assertEqual(len(sessions), 2)
+        self.assertIn("履約價", sessions[0].rows[0])
+
+    def test_future_fetch_returns_correct_data(self):
+        fetcher = FakeFetcher()
+        df, trade_date = fetcher.future_fetch_table("https://future.example", False)
+
+        self.assertEqual(trade_date, "2025/01/01")
+        self.assertEqual(len(df), 2)
+        self.assertIn("契約", df.columns)
+        self.assertIn("到期月份(週別)", df.columns)
+        self.assertEqual(df.iloc[0]["契約"], "TX")
+
+    def test_service_crawl_futures_returns_month_data(self):
+        service = TaifexCrawlerService(fetcher=FakeFetcher(), transformer=DataTransformer())
+
+        sessions = service.crawl_futures("https://day.example", "https://night.example")
+
+        self.assertEqual(len(sessions), 2)
+        self.assertEqual(sessions[0].session, "future_month")
+        self.assertEqual(sessions[1].session, "future_month")
+        self.assertEqual(sessions[0].trade_date, "2025/01/01")
+
+        # Check that rows contain only 期貨月份
+        for row in sessions[0].rows:
+            self.assertIn("期貨月份", row)
+            self.assertEqual(len(row), 1)  # Only one field
+
+        # Check unique months are extracted
+        months = [row["期貨月份"] for row in sessions[0].rows]
+        self.assertEqual(set(months), {202603, 202604})
 
 
 if __name__ == "__main__":
