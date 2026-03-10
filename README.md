@@ -125,8 +125,8 @@ Stored day(XXX) + night(XXX) rows to MongoDB.
 | `MONGO_URI` | ✅ | - | MongoDB 連線字串 |
 | `MONGO_DB` | ❌ | `market_data` | 資料庫名稱 |
 | `MONGO_COLLECTION` | ❌ | `taifex_option_daily` | Collection 名稱 |
-| `TAIFEX_DAY_URL` | ❌ | TAIFEX 官方日盤網址 | 日盤資料來源 URL |
-| `TAIFEX_NIGHT_URL` | ❌ | TAIFEX 官方夜盤網址 | 夜盤資料來源 URL |
+| `TAIFEX_DAY_URL` | ❌ | `https://www.taifex.com.tw/cht/3/optDailyMarketExcel` | 日盤資料來源 URL |
+| `TAIFEX_NIGHT_URL` | ❌ | `https://www.taifex.com.tw/cht/3/optDailyMarketExcel?marketCode=1` | 夜盤資料來源 URL |
 
 ### MongoDB 連線範例
 
@@ -174,10 +174,11 @@ OK
 
    進入 `Settings` → `Secrets and variables` → `Actions` → `New repository secret`
 
-   新增以下 Secrets：
-   - `MONGO_URI`（必填）
-   - `MONGO_DB`（選填）
-   - `MONGO_COLLECTION`（選填）
+   新增以下 Secrets / Variables：
+   - **Secret**：`MONGO_URI`（必填）
+   - **Variable（選填）**：`MONGO_DB`、`MONGO_COLLECTION`、`TAIFEX_DAY_URL`、`TAIFEX_NIGHT_URL`
+
+   > 若未設定選填變數，程式會使用預設值（見上方環境變數表）。
 
 2. **啟用 Workflow**
 

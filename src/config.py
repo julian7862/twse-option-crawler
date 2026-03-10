@@ -17,6 +17,13 @@ class CrawlerConfig:
     day_url: str
     night_url: str
 
+    DEFAULT_MONGO_DB = "market_data"
+    DEFAULT_MONGO_COLLECTION = "taifex_option_daily"
+    DEFAULT_TAIFEX_DAY_URL = "https://www.taifex.com.tw/cht/3/optDailyMarketExcel"
+    DEFAULT_TAIFEX_NIGHT_URL = (
+        "https://www.taifex.com.tw/cht/3/optDailyMarketExcel?marketCode=1"
+    )
+
     @classmethod
     def from_env(cls) -> CrawlerConfig:
         """
@@ -42,21 +49,15 @@ class CrawlerConfig:
         if not mongo_uri:
             raise RuntimeError("MONGO_URI environment variable is required")
 
-        mongo_db = os.getenv("MONGO_DB")
-        if not mongo_db:
-            raise RuntimeError("MONGO_DB environment variable is required")
+        mongo_db = os.getenv("MONGO_DB", cls.DEFAULT_MONGO_DB)
 
-        mongo_collection = os.getenv("MONGO_COLLECTION")
-        if not mongo_collection:
-            raise RuntimeError("MONGO_COLLECTION environment variable is required")
+        mongo_collection = os.getenv(
+            "MONGO_COLLECTION", cls.DEFAULT_MONGO_COLLECTION
+        )
 
-        day_url = os.getenv("TAIFEX_DAY_URL")
-        if not day_url:
-            raise RuntimeError("TAIFEX_DAY_URL environment variable is required")
+        day_url = os.getenv("TAIFEX_DAY_URL", cls.DEFAULT_TAIFEX_DAY_URL)
 
-        night_url = os.getenv("TAIFEX_NIGHT_URL")
-        if not night_url:
-            raise RuntimeError("TAIFEX_NIGHT_URL environment variable is required")
+        night_url = os.getenv("TAIFEX_NIGHT_URL", cls.DEFAULT_TAIFEX_NIGHT_URL)
 
         return cls(
             mongo_uri=mongo_uri,
