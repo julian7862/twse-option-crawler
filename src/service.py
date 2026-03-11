@@ -14,10 +14,6 @@ from .transformer import DataTransformer
 class TableFetcher(Protocol):
     """Protocol for table fetchers."""
 
-    def fetch_table(self, url: str, is_night: bool) -> tuple[pd.DataFrame, str]:
-        """Fetch table from URL."""
-        ...
-
     def option_fetch_table(self, url: str, is_night: bool) -> tuple[pd.DataFrame, str]:
         """Fetch option table from URL."""
         ...
