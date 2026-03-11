@@ -24,14 +24,20 @@ def main() -> int:
         collection_name=config.mongo_collection,
     )
 
-    # Execute
-    sessions = service.crawl(day_url=config.day_url, night_url=config.night_url)
-    repository.save_sessions(sessions)
+    # Execute - Crawl options
+    option_sessions = service.crawl_options(day_url=config.day_url, night_url=config.night_url)
+    repository.save_sessions(option_sessions)
+
+    # Execute - Crawl futures
+    future_session = service.crawl_futures(future_url=config.future_url)
+    repository.save_sessions([future_session])
 
     # Report
-    day_rows = len(sessions[0].rows)
-    night_rows = len(sessions[1].rows)
-    print(f"Stored day({day_rows}) + night({night_rows}) rows to MongoDB.")
+    day_rows = len(option_sessions[0].rows)
+    night_rows = len(option_sessions[1].rows)
+    future_rows = len(future_session.rows)
+    print(f"Stored option day({day_rows}) + night({night_rows}) rows to MongoDB.")
+    print(f"Stored future({future_rows}) month records to MongoDB.")
     return 0
 
 

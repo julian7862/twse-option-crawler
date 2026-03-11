@@ -34,7 +34,7 @@ class TaifexCrawlerService:
         self.fetcher = fetcher
         self.transformer = transformer
 
-    def crawl(self, day_url: str, night_url: str) -> list[MarketSessionData]:
+    def crawl_options(self, day_url: str, night_url: str) -> list[MarketSessionData]:
         """
         Crawl both day and night session option data.
 
@@ -63,34 +63,24 @@ class TaifexCrawlerService:
             ),
         ]
 
-    def crawl_futures(self, day_url: str, night_url: str) -> list[MarketSessionData]:
+    def crawl_futures(self, future_url: str) -> MarketSessionData:
         """
-        Crawl both day and night session future data.
+        Crawl future data and extract unique month values.
 
         Args:
-            day_url: URL for day session
-            night_url: URL for night session
+            future_url: URL for future data
 
         Returns:
-            List of MarketSessionData for both sessions with future month data
+            MarketSessionData with future month data
         """
-        day_df, day_date = self.fetcher.future_fetch_table(day_url, is_night=False)
-        night_df, night_date = self.fetcher.future_fetch_table(night_url, is_night=True)
+        df, trade_date = self.fetcher.future_fetch_table(future_url, is_night=False)
 
-        return [
-            MarketSessionData(
-                trade_date=day_date,
-                session="future_month",
-                source_url=day_url,
-                rows=self._transform_future_to_month_records(day_df),
-            ),
-            MarketSessionData(
-                trade_date=night_date,
-                session="future_month",
-                source_url=night_url,
-                rows=self._transform_future_to_month_records(night_df),
-            ),
-        ]
+        return MarketSessionData(
+            trade_date=trade_date,
+            session="future_month",
+            source_url=future_url,
+            rows=self._transform_future_to_month_records(df),
+        )
 
     def _transform_future_to_month_records(self, df: pd.DataFrame) -> list[dict]:
         """

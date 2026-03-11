@@ -16,6 +16,7 @@ class CrawlerConfig:
     mongo_collection: str
     day_url: str
     night_url: str
+    future_url: str
 
     @classmethod
     def from_env(cls) -> CrawlerConfig:
@@ -58,10 +59,15 @@ class CrawlerConfig:
         if not night_url:
             raise RuntimeError("TAIFEX_NIGHT_URL environment variable is required")
 
+        future_url = os.getenv("TAIFEX_FUTURE_URL")
+        if not future_url:
+            raise RuntimeError("TAIFEX_FUTURE_URL environment variable is required")
+
         return cls(
             mongo_uri=mongo_uri,
             mongo_db=mongo_db,
             mongo_collection=mongo_collection,
             day_url=day_url,
             night_url=night_url,
+            future_url=future_url,
         )

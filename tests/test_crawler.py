@@ -75,6 +75,7 @@ class CrawlerTests(TestCase):
                 "MONGO_COLLECTION": "demo_col",
                 "TAIFEX_DAY_URL": "https://day.example",
                 "TAIFEX_NIGHT_URL": "https://night.example",
+                "TAIFEX_FUTURE_URL": "https://future.example",
             },
             clear=True,
         ):
@@ -85,6 +86,7 @@ class CrawlerTests(TestCase):
         self.assertEqual(config.mongo_collection, "demo_col")
         self.assertEqual(config.day_url, "https://day.example")
         self.assertEqual(config.night_url, "https://night.example")
+        self.assertEqual(config.future_url, "https://future.example")
 
     def test_transformer_converts_nan_to_none(self):
         df = pd.DataFrame(
@@ -97,10 +99,10 @@ class CrawlerTests(TestCase):
         self.assertIsNone(records[0]["成交量"])
         self.assertIsInstance(records[0]["交易日"], datetime)
 
-    def test_service_crawl_returns_day_and_night_sessions(self):
+    def test_service_crawl_options_returns_day_and_night_sessions(self):
         service = TaifexCrawlerService(fetcher=FakeFetcher(), transformer=DataTransformer())
 
-        sessions = service.crawl("https://day.example", "https://night.example")
+        sessions = service.crawl_options("https://day.example", "https://night.example")
 
         self.assertEqual(len(sessions), 2)
         self.assertEqual(sessions[0].session, "day")
@@ -127,7 +129,7 @@ class CrawlerTests(TestCase):
     def test_option_fetch_returns_correct_data(self):
         service = TaifexCrawlerService(fetcher=FakeFetcher(), transformer=DataTransformer())
 
-        sessions = service.crawl("https://day.example", "https://night.example")
+        sessions = service.crawl_options("https://day.example", "https://night.example")
 
         self.assertEqual(len(sessions), 2)
         self.assertIn("履約價", sessions[0].rows[0])
@@ -145,20 +147,18 @@ class CrawlerTests(TestCase):
     def test_service_crawl_futures_returns_month_data(self):
         service = TaifexCrawlerService(fetcher=FakeFetcher(), transformer=DataTransformer())
 
-        sessions = service.crawl_futures("https://day.example", "https://night.example")
+        session = service.crawl_futures("https://future.example")
 
-        self.assertEqual(len(sessions), 2)
-        self.assertEqual(sessions[0].session, "future_month")
-        self.assertEqual(sessions[1].session, "future_month")
-        self.assertEqual(sessions[0].trade_date, "2025/01/01")
+        self.assertEqual(session.session, "future_month")
+        self.assertEqual(session.trade_date, "2025/01/01")
 
         # Check that rows contain only 期貨月份
-        for row in sessions[0].rows:
+        for row in session.rows:
             self.assertIn("期貨月份", row)
             self.assertEqual(len(row), 1)
 
         # Check unique months are extracted
-        months = [row["期貨月份"] for row in sessions[0].rows]
+        months = [row["期貨月份"] for row in session.rows]
         self.assertEqual(set(months), {202603, 202604})
         for month in months:
             self.assertIsInstance(month, int)
