@@ -19,7 +19,7 @@ from src.transformer import DataTransformer
 
 
 class FakeFetcher:
-    def fetch_table(self, url, is_night):
+    def option_fetch_table(self, url, is_night):
         df = pd.DataFrame(
             [
                 {"履約價": 23000, "成交量": 10, "交易日": pd.Timestamp("2025-01-01")},
@@ -27,9 +27,6 @@ class FakeFetcher:
             ]
         )
         return df, "2025/01/01"
-
-    def option_fetch_table(self, url, is_night):
-        return self.fetch_table(url, is_night)
 
     def future_fetch_table(self, url, is_night):
         df = pd.DataFrame(

@@ -123,15 +123,3 @@ class TaifexTableFetcher:
 
         return table, trade_date
 
-    def fetch_table(self, url: str, is_night: bool) -> tuple[pd.DataFrame, str]:
-        """
-        Fetch and parse option table from TAIFEX (deprecated, use option_fetch_table).
-
-        Args:
-            url: The URL to fetch from
-            is_night: Whether this is a night session
-
-        Returns:
-            Tuple of (DataFrame, trade_date)
-        """
-        return self.option_fetch_table(url, is_night)
