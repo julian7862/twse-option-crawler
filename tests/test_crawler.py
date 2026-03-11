@@ -88,6 +88,22 @@ class CrawlerTests(TestCase):
         self.assertEqual(config.night_url, "https://night.example")
         self.assertEqual(config.future_url, "https://future.example")
 
+    def test_config_from_env_uses_defaults_for_optional_values(self):
+        with patch.dict(
+            os.environ,
+            {
+                "MONGO_URI": "mongodb://localhost:27017",
+            },
+            clear=True,
+        ):
+            config = CrawlerConfig.from_env()
+
+        self.assertEqual(config.mongo_uri, "mongodb://localhost:27017")
+        self.assertEqual(config.mongo_db, CrawlerConfig.DEFAULT_MONGO_DB)
+        self.assertEqual(config.mongo_collection, CrawlerConfig.DEFAULT_MONGO_COLLECTION)
+        self.assertEqual(config.day_url, CrawlerConfig.DEFAULT_TAIFEX_DAY_URL)
+        self.assertEqual(config.night_url, CrawlerConfig.DEFAULT_TAIFEX_NIGHT_URL)
+
     def test_transformer_converts_nan_to_none(self):
         df = pd.DataFrame(
             [{"交易日": pd.Timestamp("2025-01-01"), "成交量": None, "履約價": 23000}]
