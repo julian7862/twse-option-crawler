@@ -22,8 +22,40 @@ class FakeFetcher:
     def option_fetch_table(self, url, is_night):
         df = pd.DataFrame(
             [
-                {"履約價": 23000, "成交量": 10, "交易日": pd.Timestamp("2025-01-01")},
-                {"履約價": 23100, "成交量": None, "交易日": pd.Timestamp("2025-01-01")},
+                # Monthly options (pure 6-digit month)
+                {
+                    "契約": "TXO",
+                    "到期月份(週別)": "202603",
+                    "履約價": 23000,
+                    "買賣權": "Call",
+                    "成交量": 10,
+                    "交易日": pd.Timestamp("2025-01-01")
+                },
+                {
+                    "契約": "TXO",
+                    "到期月份(週別)": "202603",
+                    "履約價": 23000,
+                    "買賣權": "Put",
+                    "成交量": 5,
+                    "交易日": pd.Timestamp("2025-01-01")
+                },
+                # Weekly options (should be filtered out in new logic)
+                {
+                    "契約": "TXO",
+                    "到期月份(週別)": "202603W2",
+                    "履約價": 23100,
+                    "買賣權": "Call",
+                    "成交量": 3,
+                    "交易日": pd.Timestamp("2025-01-01")
+                },
+                {
+                    "契約": "TXO",
+                    "到期月份(週別)": "202604F1",
+                    "履約價": 23100,
+                    "買賣權": "Call",
+                    "成交量": None,
+                    "交易日": pd.Timestamp("2025-01-01")
+                },
             ]
         )
         return df, "2025/01/01"
@@ -57,9 +89,13 @@ class FakeFetcher:
 class FakeCollection:
     def __init__(self):
         self.update_calls = []
+        self.indexes = []
 
     def update_one(self, filt, payload, upsert=False):
         self.update_calls.append((filt, payload, upsert))
+
+    def create_index(self, index_spec, unique=False, name=None, partialFilterExpression=None):
+        self.indexes.append((index_spec, unique, name, partialFilterExpression))
 
 
 class CrawlerTests(TestCase):
@@ -159,6 +195,81 @@ class CrawlerTests(TestCase):
         self.assertEqual(set(months), {202603, 202604})
         for month in months:
             self.assertIsInstance(month, int)
+
+    def test_extract_month_from_string(self):
+        # Test extracting month from various formats
+        self.assertEqual(MongoMarketRepository._extract_month_from_string("202603W2"), 202603)
+        self.assertEqual(MongoMarketRepository._extract_month_from_string("202603F1"), 202603)
+        self.assertEqual(MongoMarketRepository._extract_month_from_string("202604"), 202604)
+        self.assertEqual(MongoMarketRepository._extract_month_from_string(""), 0)
+        self.assertEqual(MongoMarketRepository._extract_month_from_string(None), 0)
+
+    def test_is_pure_month_value(self):
+        # Test identifying pure month values (no weekly suffixes)
+        self.assertTrue(MongoMarketRepository._is_pure_month_value("202603"))
+        self.assertTrue(MongoMarketRepository._is_pure_month_value("202605"))
+        self.assertTrue(MongoMarketRepository._is_pure_month_value(202605))
+
+        self.assertFalse(MongoMarketRepository._is_pure_month_value("202603W2"))
+        self.assertFalse(MongoMarketRepository._is_pure_month_value("202603W1"))
+        self.assertFalse(MongoMarketRepository._is_pure_month_value("202604F1"))
+        self.assertFalse(MongoMarketRepository._is_pure_month_value(""))
+        self.assertFalse(MongoMarketRepository._is_pure_month_value(None))
+
+    def test_repository_save_future_months(self):
+        fake_collection = FakeCollection()
+        months = [{"期貨月份": 202603}, {"期貨月份": 202604}]
+
+        with patch("pymongo.MongoClient") as mock_client:
+            mock_client.return_value.__enter__.return_value.__getitem__.return_value.__getitem__.return_value = fake_collection
+
+            repo = MongoMarketRepository("mongodb://localhost", "test_db", "test_col")
+            repo.save_future_months(months, "2025/01/01", "https://example.com")
+
+        # Check index was created
+        self.assertEqual(len(fake_collection.indexes), 1)
+        self.assertEqual(fake_collection.indexes[0][0], "期貨月份")
+        self.assertTrue(fake_collection.indexes[0][1])  # unique=True
+
+        # Check updates were made
+        self.assertEqual(len(fake_collection.update_calls), 2)
+        filt1, payload1, upsert1 = fake_collection.update_calls[0]
+        self.assertEqual(filt1, {"期貨月份": 202603})
+        self.assertTrue(upsert1)
+        self.assertEqual(payload1["$set"]["期貨月份"], 202603)
+
+    def test_repository_save_option_records_filters_by_valid_months(self):
+        fake_collection = FakeCollection()
+        records = [
+            # Pure month values (monthly options)
+            {"到期月份(週別)": "202603", "履約價": 23000, "買賣權": "Call", "成交量": 10},
+            {"到期月份(週別)": "202604", "履約價": 23100, "買賣權": "Put", "成交量": 5},
+            # Weekly options (should be filtered out)
+            {"到期月份(週別)": "202603W2", "履約價": 23000, "買賣權": "Call", "成交量": 7},
+            # Invalid month (not in valid_months)
+            {"到期月份(週別)": "202605", "履約價": 23200, "買賣權": "Call", "成交量": 3},
+        ]
+        valid_months = {202603, 202604}  # Only 202603 and 202604 are valid
+
+        with patch("pymongo.MongoClient") as mock_client:
+            mock_client.return_value.__enter__.return_value.__getitem__.return_value.__getitem__.return_value = fake_collection
+
+            repo = MongoMarketRepository("mongodb://localhost", "test_db", "test_col")
+            saved_count = repo.save_option_records(
+                records, "day", "2025/01/01", "https://example.com", valid_months
+            )
+
+        # Should only save 2 records (202603 and 202604 monthly options)
+        # Weekly options and invalid months are filtered out
+        self.assertEqual(saved_count, 2)
+        self.assertEqual(len(fake_collection.update_calls), 2)
+
+        # Verify the filtered records use 期貨月份 field (standardized)
+        filt1 = fake_collection.update_calls[0][0]
+        self.assertEqual(filt1["期貨月份"], 202603)
+
+        filt2 = fake_collection.update_calls[1][0]
+        self.assertEqual(filt2["期貨月份"], 202604)
 
 
 class FetcherParsingTests(TestCase):

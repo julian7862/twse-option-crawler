@@ -24,20 +24,48 @@ def main() -> int:
         collection_name=config.mongo_collection,
     )
 
-    # Execute - Crawl options
-    option_sessions = service.crawl_options(day_url=config.day_url, night_url=config.night_url)
-    repository.save_sessions(option_sessions)
-
-    # Execute - Crawl futures
+    # Step 1: Crawl futures data
+    print("Crawling futures data...")
     future_session = service.crawl_futures(future_url=config.future_url)
-    repository.save_sessions([future_session])
+
+    # Step 2: Save future month data
+    repository.save_future_months(
+        months=future_session.rows,
+        trade_date=future_session.trade_date,
+        source_url=future_session.source_url,
+    )
+
+    # Step 3: Get future months set (for filtering options)
+    future_months = {row["期貨月份"] for row in future_session.rows}
+    print(f"Future months: {sorted(future_months)}")
+
+    # Step 4: Crawl options data
+    print("Crawling options data...")
+    option_sessions = service.crawl_options(
+        day_url=config.day_url,
+        night_url=config.night_url
+    )
+
+    # Step 5: Save option data (filtered by valid months)
+    total_day_saved = 0
+    total_night_saved = 0
+    for session_data in option_sessions:
+        saved_count = repository.save_option_records(
+            records=session_data.rows,
+            session=session_data.session,
+            trade_date=session_data.trade_date,
+            source_url=session_data.source_url,
+            valid_months=future_months,
+        )
+        if session_data.session == "day":
+            total_day_saved = saved_count
+        else:
+            total_night_saved = saved_count
+        print(f"Stored {saved_count} {session_data.session} option records.")
 
     # Report
-    day_rows = len(option_sessions[0].rows)
-    night_rows = len(option_sessions[1].rows)
-    future_rows = len(future_session.rows)
-    print(f"Stored option day({day_rows}) + night({night_rows}) rows to MongoDB.")
-    print(f"Stored future({future_rows}) month records to MongoDB.")
+    print(f"Stored {len(future_session.rows)} future month records.")
+    print(f"Total: day({total_day_saved}) + night({total_night_saved}) option records.")
     return 0
 
 

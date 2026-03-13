@@ -26,7 +26,9 @@ class DataTransformer:
         """
         records: list[dict] = []
         for raw in dataframe.to_dict(orient="records"):
-            record = {str(key).strip(): cls._normalize_nan(value) for key, value in raw.items()}
+            # Remove all spaces from field names for consistency
+            # e.g., "到期 月份 (週別)" -> "到期月份(週別)"
+            record = {str(key).replace(" ", ""): cls._normalize_nan(value) for key, value in raw.items()}
             if isinstance(record.get("交易日"), pd.Timestamp):
                 record["交易日"] = record["交易日"].to_pydatetime()
             records.append(record)
