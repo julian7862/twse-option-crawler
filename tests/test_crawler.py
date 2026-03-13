@@ -86,13 +86,24 @@ class FakeFetcher:
         return df, "2025/01/01"
 
 
+class FakeBulkWriteResult:
+    def __init__(self, count):
+        self.upserted_count = count
+        self.modified_count = 0
+
+
 class FakeCollection:
     def __init__(self):
         self.update_calls = []
         self.indexes = []
+        self.bulk_operations = []
 
     def update_one(self, filt, payload, upsert=False):
         self.update_calls.append((filt, payload, upsert))
+
+    def bulk_write(self, operations, ordered=True):
+        self.bulk_operations = operations
+        return FakeBulkWriteResult(len(operations))
 
     def create_index(self, index_spec, unique=False, name=None, partialFilterExpression=None):
         self.indexes.append((index_spec, unique, name, partialFilterExpression))
@@ -262,14 +273,14 @@ class CrawlerTests(TestCase):
         # Should only save 2 records (202603 and 202604 monthly options)
         # Weekly options and invalid months are filtered out
         self.assertEqual(saved_count, 2)
-        self.assertEqual(len(fake_collection.update_calls), 2)
+        self.assertEqual(len(fake_collection.bulk_operations), 2)
 
         # Verify the filtered records use 期貨月份 field (standardized)
-        filt1 = fake_collection.update_calls[0][0]
-        self.assertEqual(filt1["期貨月份"], 202603)
+        op1 = fake_collection.bulk_operations[0]
+        self.assertEqual(op1._filter["期貨月份"], 202603)
 
-        filt2 = fake_collection.update_calls[1][0]
-        self.assertEqual(filt2["期貨月份"], 202604)
+        op2 = fake_collection.bulk_operations[1]
+        self.assertEqual(op2._filter["期貨月份"], 202604)
 
 
 class FetcherParsingTests(TestCase):

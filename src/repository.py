@@ -100,7 +100,7 @@ class MongoMarketRepository:
         valid_months: set[int]
     ) -> int:
         """
-        Save option data (one document per record).
+        Save option data (one document per record) using bulk operations.
 
         Args:
             records: List of option records
@@ -118,7 +118,7 @@ class MongoMarketRepository:
             - Only monthly options are saved (weekly options with W1, W2, F1 suffixes are filtered out)
             - The 到期月份(週別) field is standardized to 期貨月份 (pure 6-digit month number)
         """
-        from pymongo import ASCENDING, MongoClient
+        from pymongo import ASCENDING, MongoClient, UpdateOne
 
         with MongoClient(self.mongo_uri) as client:
             collection = client[self.db_name][self.collection_name]
@@ -137,7 +137,10 @@ class MongoMarketRepository:
                 partialFilterExpression={"session": {"$in": ["day", "night"]}}
             )
 
-            saved_count = 0
+            # Build bulk operations
+            operations = []
+            fetched_at = datetime.now(timezone.utc)
+
             for record in records:
                 # Get the expiry month value
                 month_str = record.get("到期月份(週別)", "")
@@ -164,23 +167,29 @@ class MongoMarketRepository:
                     "買賣權": record.get("買賣權"),
                     "trade_date": trade_date,
                     "source_url": source_url,
-                    "fetched_at": datetime.now(timezone.utc),
+                    "fetched_at": fetched_at,
                     **{k: v for k, v in record.items() if k != "到期月份(週別)"}  # Exclude old field
                 }
 
-                collection.update_one(
-                    {
-                        "session": session,
-                        "期貨月份": month_int,
-                        "履約價": record.get("履約價"),
-                        "買賣權": record.get("買賣權"),
-                    },
-                    {"$set": payload},
-                    upsert=True
+                operations.append(
+                    UpdateOne(
+                        {
+                            "session": session,
+                            "期貨月份": month_int,
+                            "履約價": record.get("履約價"),
+                            "買賣權": record.get("買賣權"),
+                        },
+                        {"$set": payload},
+                        upsert=True
+                    )
                 )
-                saved_count += 1
 
-            return saved_count
+            # Execute bulk write if there are operations
+            if operations:
+                result = collection.bulk_write(operations, ordered=False)
+                return result.upserted_count + result.modified_count
+
+            return 0
 
     @staticmethod
     def _is_pure_month_value(month_str: str) -> bool:
