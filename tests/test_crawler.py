@@ -364,7 +364,35 @@ class FetcherParsingTests(TestCase):
 
 class TwseFetcherTests(TestCase):
     @patch("src.fetcher.requests.get")
+    def test_fetch_latest_close_index_parses_json_response(self, mock_get):
+        """Test that JSON response (from GitHub Actions) is parsed correctly."""
+        json_response = '''{
+            "stat": "OK",
+            "title": "115年03月 發行量加權股價指數歷史資料",
+            "fields": ["日期", "開盤指數", "最高指數", "最低指數", "收盤指數"],
+            "data": [
+                ["115/03/02", "35,277.48", "35,345.72", "34,605.36", "35,095.09"],
+                ["115/03/03", "35,106.22", "35,264.59", "34,323.65", "34,323.65"],
+                ["115/03/13", "33,215.78", "33,639.18", "33,013.46", "33,400.32"]
+            ]
+        }'''
+        response = Mock()
+        response.text = json_response
+        response.status_code = 200
+        response.raise_for_status = Mock()
+        mock_get.return_value = response
+
+        result = TwseTaiexFetcher().fetch_latest_close_index(
+            "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?response=html"
+        )
+
+        # Should use last row (latest date) from JSON data
+        self.assertEqual(result["date"], "2026/03/13")  # 115 + 1911 = 2026
+        self.assertEqual(result["close_index"], 33400.32)
+
+    @patch("src.fetcher.requests.get")
     def test_fetch_latest_close_index_uses_max_date(self, mock_get):
+        """Test HTML response parsing (from local/browser)."""
         html = """
         <html><body>
         <table>
@@ -377,6 +405,7 @@ class TwseFetcherTests(TestCase):
         """
         response = Mock()
         response.text = html
+        response.status_code = 200
         response.raise_for_status = Mock()
         mock_get.return_value = response
 

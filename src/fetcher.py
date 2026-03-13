@@ -161,7 +161,9 @@ class TwseTaiexFetcher:
         return date_str
 
     def fetch_latest_close_index(self, url: str) -> dict[str, str | float]:
-        """Fetch the latest date's close index from a TWSE HTML table page."""
+        """Fetch the latest date's close index from a TWSE page (supports JSON and HTML)."""
+        import json
+
         response = self._get_with_proxy_fallback(url)
         response.encoding = "utf-8"
 
@@ -173,20 +175,60 @@ class TwseTaiexFetcher:
                 f"Status: {response.status_code}, Content: {content_preview}"
             )
 
+        # Try JSON first (GitHub Actions may receive JSON instead of HTML)
+        try:
+            json_data = json.loads(response.text)
+            return self._parse_json_response(json_data)
+        except (json.JSONDecodeError, KeyError, IndexError):
+            pass  # Not JSON or invalid format, try HTML
+
+        # Fall back to HTML parsing
         try:
             tables = pd.read_html(io.StringIO(response.text), flavor="lxml")
         except ValueError as e:
-            # No tables found - likely blocked or error page
             raise RuntimeError(
-                f"TWSE response contains no tables (possibly blocked). "
+                f"TWSE response is neither valid JSON nor HTML with tables. "
                 f"Status: {response.status_code}, Content preview: {content_preview}"
             ) from e
 
         if not tables:
             raise RuntimeError(f"Could not find any table from: {url}")
 
-        table = tables[0]
+        return self._parse_html_table(tables[0])
 
+    def _parse_json_response(self, json_data: dict) -> dict[str, str | float]:
+        """Parse TWSE JSON response format."""
+        if json_data.get("stat") != "OK":
+            raise RuntimeError(f"TWSE JSON response stat is not OK: {json_data.get('stat')}")
+
+        fields = json_data.get("fields", [])
+        data = json_data.get("data", [])
+
+        if not data:
+            raise RuntimeError("TWSE JSON response has no data")
+
+        # Find column indices
+        date_idx = next((i for i, f in enumerate(fields) if "日期" in f), None)
+        close_idx = next((i for i, f in enumerate(fields) if "收盤" in f), None)
+
+        if date_idx is None or close_idx is None:
+            raise RuntimeError(f"Could not find 日期/收盤 in fields: {fields}")
+
+        # Get the last row (latest date)
+        latest_row = data[-1]
+        roc_date = latest_row[date_idx]
+        close_value = str(latest_row[close_idx]).replace(",", "").strip()
+
+        # Convert ROC date to Gregorian
+        gregorian_date = self._roc_to_gregorian(roc_date)
+
+        return {
+            "date": gregorian_date,
+            "close_index": float(close_value),
+        }
+
+    def _parse_html_table(self, table: pd.DataFrame) -> dict[str, str | float]:
+        """Parse TWSE HTML table format."""
         # Handle multi-level column names (flatten if needed)
         if isinstance(table.columns, pd.MultiIndex):
             table.columns = [col[-1] for col in table.columns]
@@ -194,18 +236,18 @@ class TwseTaiexFetcher:
         date_col = next((col for col in table.columns if "日期" in str(col)), None)
         close_col = next((col for col in table.columns if "收盤" in str(col)), None)
         if date_col is None or close_col is None:
-            raise RuntimeError(f"Could not find 日期/收盤 columns from: {url}")
+            raise RuntimeError(f"Could not find 日期/收盤 columns: {list(table.columns)}")
 
         data = table[[date_col, close_col]].dropna().copy()
         if data.empty:
-            raise RuntimeError(f"TWSE table is empty from: {url}")
+            raise RuntimeError("TWSE table is empty")
 
         # Convert ROC date to Gregorian and parse
         data["_date_gregorian"] = data[date_col].apply(self._roc_to_gregorian)
         data["_date_parsed"] = pd.to_datetime(data["_date_gregorian"], format="%Y/%m/%d", errors="coerce")
         data = data.dropna(subset=["_date_parsed"])
         if data.empty:
-            raise RuntimeError(f"Could not parse 日期 column from: {url}")
+            raise RuntimeError("Could not parse 日期 column")
 
         latest_row = data.sort_values("_date_parsed", ascending=False).iloc[0]
         close_value = str(latest_row[close_col]).replace(",", "").strip()
