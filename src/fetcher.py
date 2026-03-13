@@ -7,7 +7,7 @@ import re
 
 import pandas as pd
 import requests
-from requests.exceptions import ProxyError
+from requests.exceptions import ProxyError, SSLError
 
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -122,16 +122,35 @@ class TwseTaiexFetcher:
 
     def _get_with_proxy_fallback(self, url: str) -> requests.Response:
         """Try default request first, then retry direct connection when proxy blocks."""
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
         try:
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = requests.get(url, headers=self.headers, timeout=30, verify=False)
             response.raise_for_status()
             return response
-        except ProxyError:
+        except (ProxyError, SSLError):
             session = requests.Session()
             session.trust_env = False
-            response = session.get(url, headers=self.headers, timeout=30)
+            response = session.get(url, headers=self.headers, timeout=30, verify=False)
             response.raise_for_status()
             return response
+
+    @staticmethod
+    def _roc_to_gregorian(date_str: str) -> str:
+        """Convert ROC date (民國年) to Gregorian date if needed.
+
+        Example: '115/03/13' -> '2026/03/13'
+        Already Gregorian: '2025/01/01' -> '2025/01/01'
+        """
+        parts = str(date_str).split("/")
+        if len(parts) == 3:
+            year = int(parts[0])
+            # If year < 1911, assume it's ROC calendar
+            if year < 1911:
+                gregorian_year = year + 1911
+                return f"{gregorian_year}/{parts[1]}/{parts[2]}"
+        return date_str
 
     def fetch_latest_close_index(self, url: str) -> dict[str, str | float]:
         """Fetch the latest date's close index from a TWSE HTML table page."""
@@ -143,6 +162,11 @@ class TwseTaiexFetcher:
             raise RuntimeError(f"Could not find any table from: {url}")
 
         table = tables[0]
+
+        # Handle multi-level column names (flatten if needed)
+        if isinstance(table.columns, pd.MultiIndex):
+            table.columns = [col[-1] for col in table.columns]
+
         date_col = next((col for col in table.columns if "日期" in str(col)), None)
         close_col = next((col for col in table.columns if "收盤" in str(col)), None)
         if date_col is None or close_col is None:
@@ -152,15 +176,17 @@ class TwseTaiexFetcher:
         if data.empty:
             raise RuntimeError(f"TWSE table is empty from: {url}")
 
-        data[date_col] = pd.to_datetime(data[date_col], errors="coerce")
-        data = data.dropna(subset=[date_col])
+        # Convert ROC date to Gregorian and parse
+        data["_date_gregorian"] = data[date_col].apply(self._roc_to_gregorian)
+        data["_date_parsed"] = pd.to_datetime(data["_date_gregorian"], format="%Y/%m/%d", errors="coerce")
+        data = data.dropna(subset=["_date_parsed"])
         if data.empty:
             raise RuntimeError(f"Could not parse 日期 column from: {url}")
 
-        latest_row = data.sort_values(date_col, ascending=False).iloc[0]
+        latest_row = data.sort_values("_date_parsed", ascending=False).iloc[0]
         close_value = str(latest_row[close_col]).replace(",", "").strip()
 
         return {
-            "date": latest_row[date_col].strftime("%Y/%m/%d"),
+            "date": latest_row["_date_parsed"].strftime("%Y/%m/%d"),
             "close_index": float(close_value),
         }
