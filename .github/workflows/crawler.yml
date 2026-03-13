@@ -67,5 +67,6 @@ jobs:
         TAIFEX_DAY_URL: ${{ vars.TAIFEX_DAY_URL }}
         TAIFEX_NIGHT_URL: ${{ vars.TAIFEX_NIGHT_URL }}
         TAIFEX_FUTURE_URL: ${{ vars.TAIFEX_FUTURE_URL }}
+        TWSE_TAIEX_URL: ${{ vars.TWSE_TAIEX_URL }}
       run: |
         python main.py

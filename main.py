@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Main entry point for TAIFEX option crawler."""
+"""Main entry point for TAIFEX and TWSE crawler."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 import time
 
 from src.config import CrawlerConfig
-from src.fetcher import TaifexTableFetcher
+from src.fetcher import TaifexTableFetcher, TwseTaiexFetcher
 from src.repository import MongoMarketRepository
 from src.service import TaifexCrawlerService
 from src.transformer import DataTransformer
@@ -45,6 +45,7 @@ def main() -> int:
 
     # Build dependencies
     fetcher = TaifexTableFetcher()
+    twse_fetcher = TwseTaiexFetcher()
     transformer = DataTransformer()
     service = TaifexCrawlerService(fetcher=fetcher, transformer=transformer)
     repository = MongoMarketRepository(
@@ -54,7 +55,7 @@ def main() -> int:
     )
 
     # Step 1: Crawl futures data (get valid months)
-    print("[1/5] Crawling futures data...")
+    print("[1/6] Crawling futures data...")
     step_start = time.time()
     future_session = service.crawl_futures(future_url=config.future_url)
     future_months = {row["期貨月份"] for row in future_session.rows}
@@ -62,7 +63,7 @@ def main() -> int:
     print(f"      Future months: {sorted(future_months)}")
 
     # Step 2: Crawl options data (need day session for expiry dates)
-    print("[2/5] Crawling options data...")
+    print("[2/6] Crawling options data...")
     step_start = time.time()
     option_sessions = service.crawl_options(
         day_url=config.day_url,
@@ -75,8 +76,15 @@ def main() -> int:
     expiry_dates = extract_expiry_dates(day_session.rows)
     print(f"      Expiry dates: {expiry_dates}")
 
-    # Step 4: Save future month data (with expiry dates)
-    print("[3/5] Saving future months...")
+    # Step 4: Crawl TWSE TAIEX data
+    print("[3/6] Crawling TWSE TAIEX data...")
+    step_start = time.time()
+    taiex_data = twse_fetcher.fetch_latest_close_index(config.twse_taiex_url)
+    print(f"      Done in {time.time() - step_start:.2f}s")
+    print(f"      TAIEX: {taiex_data['date']} -> {taiex_data['close_index']}")
+
+    # Step 5: Save future month data (with expiry dates)
+    print("[4/6] Saving future months...")
     step_start = time.time()
     repository.save_future_months(
         months=future_session.rows,
@@ -86,11 +94,21 @@ def main() -> int:
     )
     print(f"      Done in {time.time() - step_start:.2f}s")
 
-    # Step 5: Save option data (filtered by valid months)
+    # Step 6: Save TWSE TAIEX data
+    print("[5/6] Saving TWSE TAIEX data...")
+    step_start = time.time()
+    repository.save_twse_taiex(
+        date=taiex_data["date"],
+        close_index=taiex_data["close_index"],
+        source_url=config.twse_taiex_url,
+    )
+    print(f"      Done in {time.time() - step_start:.2f}s")
+
+    # Step 7: Save option data (filtered by valid months)
     total_day_saved = 0
     total_night_saved = 0
     for session_data in option_sessions:
-        print(f"[4/5] Saving {session_data.session} option records...")
+        print(f"[6/6] Saving {session_data.session} option records...")
         step_start = time.time()
         saved_count = repository.save_option_records(
             records=session_data.rows,
@@ -108,6 +126,7 @@ def main() -> int:
     # Report
     print(f"\n[Summary]")
     print(f"  Future months: {len(future_session.rows)}")
+    print(f"  TWSE TAIEX: {taiex_data['close_index']}")
     print(f"  Day options: {total_day_saved}")
     print(f"  Night options: {total_night_saved}")
     print(f"  Total time: {time.time() - total_start:.2f}s")

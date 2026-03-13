@@ -128,6 +128,7 @@ class CrawlerTests(TestCase):
                 "TAIFEX_DAY_URL": "https://day.example",
                 "TAIFEX_NIGHT_URL": "https://night.example",
                 "TAIFEX_FUTURE_URL": "https://future.example",
+                "TWSE_TAIEX_URL": "https://twse.example",
             },
             clear=True,
         ):
@@ -139,6 +140,7 @@ class CrawlerTests(TestCase):
         self.assertEqual(config.day_url, "https://day.example")
         self.assertEqual(config.night_url, "https://night.example")
         self.assertEqual(config.future_url, "https://future.example")
+        self.assertEqual(config.twse_taiex_url, "https://twse.example")
 
     def test_transformer_converts_nan_to_none(self):
         df = pd.DataFrame(
@@ -283,6 +285,29 @@ class CrawlerTests(TestCase):
         self.assertEqual(saved_count, 2)
         # Verify bulk_write was called with correct number of operations
         self.assertEqual(len(fake_collection.bulk_operations), 2)
+
+    def test_repository_save_twse_taiex(self):
+        fake_collection = FakeCollection()
+
+        with patch("pymongo.MongoClient") as mock_client:
+            mock_client.return_value.__enter__.return_value.__getitem__.return_value.__getitem__.return_value = fake_collection
+
+            repo = MongoMarketRepository("mongodb://localhost", "test_db", "test_col")
+            repo.save_twse_taiex(
+                date="2025/01/03",
+                close_index=22300.33,
+                source_url="https://twse.example.com",
+            )
+
+        # Check update was made
+        self.assertEqual(len(fake_collection.update_calls), 1)
+        filt, payload, upsert = fake_collection.update_calls[0]
+        self.assertEqual(filt, {"session": "twse_taiex"})
+        self.assertTrue(upsert)
+        self.assertEqual(payload["$set"]["session"], "twse_taiex")
+        self.assertEqual(payload["$set"]["trade_date"], "2025/01/03")
+        self.assertEqual(payload["$set"]["收盤指數"], 22300.33)
+        self.assertEqual(payload["$set"]["source_url"], "https://twse.example.com")
 
 
 class FetcherParsingTests(TestCase):
