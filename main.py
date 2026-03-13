@@ -76,12 +76,17 @@ def main() -> int:
     expiry_dates = extract_expiry_dates(day_session.rows)
     print(f"      Expiry dates: {expiry_dates}")
 
-    # Step 4: Crawl TWSE TAIEX data
+    # Step 4: Crawl TWSE TAIEX data (optional - may fail due to IP blocking)
     print("[3/6] Crawling TWSE TAIEX data...")
     step_start = time.time()
-    taiex_data = twse_fetcher.fetch_latest_close_index(config.twse_taiex_url)
-    print(f"      Done in {time.time() - step_start:.2f}s")
-    print(f"      TAIEX: {taiex_data['date']} -> {taiex_data['close_index']}")
+    taiex_data: dict | None = None
+    try:
+        taiex_data = twse_fetcher.fetch_latest_close_index(config.twse_taiex_url)
+        print(f"      Done in {time.time() - step_start:.2f}s")
+        print(f"      TAIEX: {taiex_data['date']} -> {taiex_data['close_index']}")
+    except Exception as e:
+        print(f"      WARNING: Failed to fetch TWSE TAIEX data: {e}")
+        print(f"      Continuing without TAIEX data...")
 
     # Step 5: Save future month data (with expiry dates)
     print("[4/6] Saving future months...")
@@ -94,14 +99,18 @@ def main() -> int:
     )
     print(f"      Done in {time.time() - step_start:.2f}s")
 
-    # Step 6: Save TWSE TAIEX data
-    print("[5/6] Saving TWSE TAIEX data...")
-    step_start = time.time()
-    repository.save_twse_taiex(
-        date=taiex_data["date"],
-        close_index=taiex_data["close_index"],
-        source_url=config.twse_taiex_url,
-    )
+    # Step 6: Save TWSE TAIEX data (if available)
+    if taiex_data:
+        print("[5/6] Saving TWSE TAIEX data...")
+        step_start = time.time()
+        repository.save_twse_taiex(
+            date=taiex_data["date"],
+            close_index=taiex_data["close_index"],
+            source_url=config.twse_taiex_url,
+        )
+        print(f"      Done in {time.time() - step_start:.2f}s")
+    else:
+        print("[5/6] Skipping TWSE TAIEX save (no data)")
     print(f"      Done in {time.time() - step_start:.2f}s")
 
     # Step 7: Save option data (filtered by valid months)
@@ -126,7 +135,7 @@ def main() -> int:
     # Report
     print(f"\n[Summary]")
     print(f"  Future months: {len(future_session.rows)}")
-    print(f"  TWSE TAIEX: {taiex_data['close_index']}")
+    print(f"  TWSE TAIEX: {taiex_data['close_index'] if taiex_data else 'N/A (failed)'}")
     print(f"  Day options: {total_day_saved}")
     print(f"  Night options: {total_night_saved}")
     print(f"  Total time: {time.time() - total_start:.2f}s")

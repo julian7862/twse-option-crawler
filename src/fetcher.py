@@ -165,7 +165,23 @@ class TwseTaiexFetcher:
         response = self._get_with_proxy_fallback(url)
         response.encoding = "utf-8"
 
-        tables = pd.read_html(io.StringIO(response.text), flavor="lxml")
+        # Check if response looks like an error page or blocked response
+        content_preview = response.text[:500] if response.text else "(empty)"
+        if not response.text or len(response.text) < 100:
+            raise RuntimeError(
+                f"TWSE returned empty or blocked response. "
+                f"Status: {response.status_code}, Content: {content_preview}"
+            )
+
+        try:
+            tables = pd.read_html(io.StringIO(response.text), flavor="lxml")
+        except ValueError as e:
+            # No tables found - likely blocked or error page
+            raise RuntimeError(
+                f"TWSE response contains no tables (possibly blocked). "
+                f"Status: {response.status_code}, Content preview: {content_preview}"
+            ) from e
+
         if not tables:
             raise RuntimeError(f"Could not find any table from: {url}")
 
