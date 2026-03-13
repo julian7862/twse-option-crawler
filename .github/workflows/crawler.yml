@@ -28,9 +28,10 @@ jobs:
     - name: Run crawler
       env:
         MONGO_URI: ${{ secrets.MONGO_URI }}
-        MONGO_DB: ${{ secrets.MONGO_DB }}
-        MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
-        TAIFEX_DAY_URL: ${{ secrets.TAIFEX_DAY_URL }}
-        TAIFEX_NIGHT_URL: ${{ secrets.TAIFEX_NIGHT_URL }}
+        MONGO_DB: ${{ vars.MONGO_DB }}
+        MONGO_COLLECTION: ${{ vars.MONGO_COLLECTION }}
+        TAIFEX_DAY_URL: ${{ vars.TAIFEX_DAY_URL }}
+        TAIFEX_NIGHT_URL: ${{ vars.TAIFEX_NIGHT_URL }}
+        TAIFEX_FUTURE_URL: ${{ vars.TAIFEX_FUTURE_URL }}
       run: |
         python main.py
