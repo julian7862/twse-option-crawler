@@ -51,7 +51,13 @@ class MongoMarketRepository:
             upsert=True,
         )
 
-    def save_future_months(self, months: list[dict], trade_date: str, source_url: str) -> None:
+    def save_future_months(
+        self,
+        months: list[dict],
+        trade_date: str,
+        source_url: str,
+        expiry_dates: dict[int, int] | None = None,
+    ) -> None:
         """
         Save future month data (one document per month).
 
@@ -59,10 +65,14 @@ class MongoMarketRepository:
             months: List of month records with 期貨月份 field
             trade_date: Trading date string
             source_url: Source URL for the data
+            expiry_dates: Optional mapping of month (int) to expiry date (int, YYYYMMDD)
 
         Unique key: 期貨月份
         """
         from pymongo import MongoClient
+
+        if expiry_dates is None:
+            expiry_dates = {}
 
         with MongoClient(self.mongo_uri) as client:
             collection = client[self.db_name][self.collection_name]
@@ -85,6 +95,10 @@ class MongoMarketRepository:
                     "source_url": source_url,
                     "fetched_at": datetime.now(timezone.utc),
                 }
+                # Add expiry date if available
+                if month_value in expiry_dates:
+                    payload["契約到期日"] = expiry_dates[month_value]
+
                 collection.update_one(
                     {"期貨月份": month_value},
                     {"$set": payload},

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 from src.config import CrawlerConfig
@@ -10,6 +11,31 @@ from src.fetcher import TaifexTableFetcher
 from src.repository import MongoMarketRepository
 from src.service import TaifexCrawlerService
 from src.transformer import DataTransformer
+
+
+def extract_expiry_dates(day_session_rows: list[dict]) -> dict[int, int]:
+    """
+    Extract expiry dates from day session data.
+
+    Args:
+        day_session_rows: List of option records from day session
+
+    Returns:
+        Mapping of future month (int) to expiry date (int, YYYYMMDD format)
+    """
+    expiry_map: dict[int, int] = {}
+    for row in day_session_rows:
+        month_str = str(row.get("到期月份(週別)", ""))
+        expiry = row.get("契約到期日")
+
+        # Only use pure month values (6 digits, no W1/W2/F1 suffix)
+        if re.match(r"^\d{6}$", month_str) and expiry is not None:
+            month_int = int(month_str)
+            if month_int not in expiry_map:
+                # Convert float to int (e.g., 20260318.0 -> 20260318)
+                expiry_map[month_int] = int(expiry)
+
+    return expiry_map
 
 
 def main() -> int:
@@ -27,32 +53,36 @@ def main() -> int:
         collection_name=config.mongo_collection,
     )
 
-    # Step 1: Crawl futures data
+    # Step 1: Crawl futures data (get valid months)
     print("[1/5] Crawling futures data...")
     step_start = time.time()
     future_session = service.crawl_futures(future_url=config.future_url)
+    future_months = {row["期貨月份"] for row in future_session.rows}
+    print(f"      Done in {time.time() - step_start:.2f}s")
+    print(f"      Future months: {sorted(future_months)}")
+
+    # Step 2: Crawl options data (need day session for expiry dates)
+    print("[2/5] Crawling options data...")
+    step_start = time.time()
+    option_sessions = service.crawl_options(
+        day_url=config.day_url,
+        night_url=config.night_url
+    )
     print(f"      Done in {time.time() - step_start:.2f}s")
 
-    # Step 2: Save future month data
-    print("[2/5] Saving future months...")
+    # Step 3: Extract expiry dates from day session
+    day_session = next(s for s in option_sessions if s.session == "day")
+    expiry_dates = extract_expiry_dates(day_session.rows)
+    print(f"      Expiry dates: {expiry_dates}")
+
+    # Step 4: Save future month data (with expiry dates)
+    print("[3/5] Saving future months...")
     step_start = time.time()
     repository.save_future_months(
         months=future_session.rows,
         trade_date=future_session.trade_date,
         source_url=future_session.source_url,
-    )
-    print(f"      Done in {time.time() - step_start:.2f}s")
-
-    # Step 3: Get future months set (for filtering options)
-    future_months = {row["期貨月份"] for row in future_session.rows}
-    print(f"      Future months: {sorted(future_months)}")
-
-    # Step 4: Crawl options data
-    print("[3/5] Crawling options data...")
-    step_start = time.time()
-    option_sessions = service.crawl_options(
-        day_url=config.day_url,
-        night_url=config.night_url
+        expiry_dates=expiry_dates,
     )
     print(f"      Done in {time.time() - step_start:.2f}s")
 
