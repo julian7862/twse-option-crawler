@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
-from requests.exceptions import ProxyError
+from requests.exceptions import ConnectionError, ProxyError
 
 import pandas as pd
 
@@ -400,6 +400,38 @@ class TwseFetcherTests(TestCase):
         """
 
         mock_get.side_effect = ProxyError("proxy blocked")
+
+        fallback_response = Mock()
+        fallback_response.text = html
+        fallback_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.get.return_value = fallback_response
+        mock_session_cls.return_value = mock_session
+
+        result = TwseTaiexFetcher().fetch_latest_close_index(
+            "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?response=html"
+        )
+
+        self.assertFalse(mock_session.trust_env)
+        mock_session.get.assert_called_once()
+        self.assertEqual(result["date"], "2025/01/03")
+        self.assertEqual(result["close_index"], 22300.33)
+
+    @patch("src.fetcher.requests.Session")
+    @patch("src.fetcher.requests.get")
+    def test_fetch_latest_close_index_retries_on_connection_error(self, mock_get, mock_session_cls):
+        """Test that ConnectionError (DNS failure, etc.) triggers proxy fallback."""
+        html = """
+        <html><body>
+        <table>
+          <tr><th>日期</th><th>收盤指數</th></tr>
+          <tr><td>2025/01/03</td><td>22,300.33</td></tr>
+        </table>
+        </body></html>
+        """
+
+        mock_get.side_effect = ConnectionError("DNS resolution failed")
 
         fallback_response = Mock()
         fallback_response.text = html

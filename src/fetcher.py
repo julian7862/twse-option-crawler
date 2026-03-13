@@ -7,7 +7,7 @@ import re
 
 import pandas as pd
 import requests
-from requests.exceptions import ProxyError, SSLError
+from requests.exceptions import ConnectionError, ProxyError, SSLError, Timeout
 
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -121,7 +121,14 @@ class TwseTaiexFetcher:
         self.headers = headers or DEFAULT_HEADERS
 
     def _get_with_proxy_fallback(self, url: str) -> requests.Response:
-        """Try default request first, then retry direct connection when proxy blocks."""
+        """Try default request first, then retry direct connection when proxy/network fails.
+
+        Handles:
+        - ProxyError: Proxy server rejected the request
+        - SSLError: SSL certificate verification failed
+        - ConnectionError: DNS resolution failed, connection refused, etc.
+        - Timeout: Request timed out (possibly due to proxy)
+        """
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -129,7 +136,8 @@ class TwseTaiexFetcher:
             response = requests.get(url, headers=self.headers, timeout=30, verify=False)
             response.raise_for_status()
             return response
-        except (ProxyError, SSLError):
+        except (ProxyError, SSLError, ConnectionError, Timeout):
+            # Retry without proxy (trust_env=False ignores HTTP_PROXY/HTTPS_PROXY)
             session = requests.Session()
             session.trust_env = False
             response = session.get(url, headers=self.headers, timeout=30, verify=False)
