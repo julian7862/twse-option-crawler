@@ -1,4 +1,4 @@
-"""HTTP fetcher for TAIFEX option data."""
+"""HTTP fetchers for TAIFEX and TWSE data."""
 
 from __future__ import annotations
 
@@ -7,12 +7,13 @@ import re
 
 import pandas as pd
 import requests
+from requests.exceptions import ConnectionError, ProxyError, SSLError, Timeout
 
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
 class TaifexTableFetcher:
-    """Fetches option tables from TAIFEX website."""
+    """Fetches option and future tables from TAIFEX website."""
 
     def __init__(self, headers: dict | None = None):
         self.headers = headers or DEFAULT_HEADERS
@@ -87,14 +88,10 @@ class TaifexTableFetcher:
         trade_date = date_match.group(1)
         tables = pd.read_html(io.StringIO(html), header=0, flavor="lxml")
 
-        # Find the futures table (first table with 契約 column)
-        # Column name might have spaces like "到期 月份 (週別)" or "到期月份(週別)"
         table = None
         for tbl in tables:
-            # Check if this is a futures table by looking for key columns
             has_contract = "契約" in tbl.columns
             has_expiry = any("到期" in str(col) and "月份" in str(col) for col in tbl.columns)
-
             if has_contract and has_expiry:
                 table = tbl
                 break
@@ -102,24 +99,102 @@ class TaifexTableFetcher:
         if table is None:
             raise RuntimeError(f"Could not find futures table from: {url}")
 
-        # Remove unnamed columns
         table = table.loc[:, ~table.columns.str.contains(r"^Unnamed")]
 
-        # Remove summary rows (小計 row)
-        # The summary row might have NaN in contract column and "小計" in other columns
         if len(table) > 0:
             last_row = table.iloc[-1]
-            # Check if any cell in the last row contains summary keywords
             last_row_str = " ".join(str(val) for val in last_row.values)
             if any(keyword in last_row_str for keyword in ["小計", "合計", "總計"]) or pd.isna(last_row.iloc[0]):
                 table = table.iloc[:-1]
 
-        # Replace dashes with NA
         table = table.replace({"-": pd.NA, "－": pd.NA})
-
-        # Add metadata columns
         table["市場時段"] = "夜盤" if is_night else "日盤"
         table["交易日"] = pd.to_datetime(trade_date, format="%Y/%m/%d")
 
         return table, trade_date
 
+
+class TwseTaiexFetcher:
+    """Fetches TAIEX index data from TWSE."""
+
+    def __init__(self, headers: dict | None = None):
+        self.headers = headers or DEFAULT_HEADERS
+
+    def _get_with_proxy_fallback(self, url: str) -> requests.Response:
+        """Try default request first, then retry direct connection when proxy/network fails.
+
+        Handles:
+        - ProxyError: Proxy server rejected the request
+        - SSLError: SSL certificate verification failed
+        - ConnectionError: DNS resolution failed, connection refused, etc.
+        - Timeout: Request timed out (possibly due to proxy)
+        """
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        try:
+            response = requests.get(url, headers=self.headers, timeout=30, verify=False)
+            response.raise_for_status()
+            return response
+        except (ProxyError, SSLError, ConnectionError, Timeout):
+            # Retry without proxy (trust_env=False ignores HTTP_PROXY/HTTPS_PROXY)
+            session = requests.Session()
+            session.trust_env = False
+            response = session.get(url, headers=self.headers, timeout=30, verify=False)
+            response.raise_for_status()
+            return response
+
+    @staticmethod
+    def _roc_to_gregorian(date_str: str) -> str:
+        """Convert ROC date (民國年) to Gregorian date if needed.
+
+        Example: '115/03/13' -> '2026/03/13'
+        Already Gregorian: '2025/01/01' -> '2025/01/01'
+        """
+        parts = str(date_str).split("/")
+        if len(parts) == 3:
+            year = int(parts[0])
+            # If year < 1911, assume it's ROC calendar
+            if year < 1911:
+                gregorian_year = year + 1911
+                return f"{gregorian_year}/{parts[1]}/{parts[2]}"
+        return date_str
+
+    def fetch_latest_close_index(self, url: str) -> dict[str, str | float]:
+        """Fetch the latest date's close index from a TWSE HTML table page."""
+        response = self._get_with_proxy_fallback(url)
+        response.encoding = "utf-8"
+
+        tables = pd.read_html(io.StringIO(response.text), flavor="lxml")
+        if not tables:
+            raise RuntimeError(f"Could not find any table from: {url}")
+
+        table = tables[0]
+
+        # Handle multi-level column names (flatten if needed)
+        if isinstance(table.columns, pd.MultiIndex):
+            table.columns = [col[-1] for col in table.columns]
+
+        date_col = next((col for col in table.columns if "日期" in str(col)), None)
+        close_col = next((col for col in table.columns if "收盤" in str(col)), None)
+        if date_col is None or close_col is None:
+            raise RuntimeError(f"Could not find 日期/收盤 columns from: {url}")
+
+        data = table[[date_col, close_col]].dropna().copy()
+        if data.empty:
+            raise RuntimeError(f"TWSE table is empty from: {url}")
+
+        # Convert ROC date to Gregorian and parse
+        data["_date_gregorian"] = data[date_col].apply(self._roc_to_gregorian)
+        data["_date_parsed"] = pd.to_datetime(data["_date_gregorian"], format="%Y/%m/%d", errors="coerce")
+        data = data.dropna(subset=["_date_parsed"])
+        if data.empty:
+            raise RuntimeError(f"Could not parse 日期 column from: {url}")
+
+        latest_row = data.sort_values("_date_parsed", ascending=False).iloc[0]
+        close_value = str(latest_row[close_col]).replace(",", "").strip()
+
+        return {
+            "date": latest_row["_date_parsed"].strftime("%Y/%m/%d"),
+            "close_index": float(close_value),
+        }

@@ -257,3 +257,33 @@ class MongoMarketRepository:
         # Extract first 6 digits
         match = re.match(r'(\d{6})', str(month_str))
         return int(match.group(1)) if match else 0
+
+    def save_twse_taiex(self, date: str, close_index: float, source_url: str) -> None:
+        """
+        Save TWSE TAIEX closing index data.
+
+        Args:
+            date: Trading date string (YYYY/MM/DD format)
+            close_index: Closing index value
+            source_url: Source URL for the data
+
+        Unique key: session="twse_taiex" (only one document, always latest)
+        """
+        from pymongo import MongoClient
+
+        with MongoClient(self.mongo_uri) as client:
+            collection = client[self.db_name][self.collection_name]
+
+            payload = {
+                "session": "twse_taiex",
+                "trade_date": date,
+                "收盤指數": close_index,
+                "source_url": source_url,
+                "fetched_at": datetime.now(timezone.utc),
+            }
+
+            collection.update_one(
+                {"session": "twse_taiex"},
+                {"$set": payload},
+                upsert=True,
+            )

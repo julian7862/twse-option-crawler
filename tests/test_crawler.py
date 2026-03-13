@@ -5,13 +5,15 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
+from requests.exceptions import ConnectionError, ProxyError
+
 import pandas as pd
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config import CrawlerConfig
-from src.fetcher import TaifexTableFetcher
+from src.fetcher import TaifexTableFetcher, TwseTaiexFetcher
 from src.models import MarketSessionData
 from src.repository import MongoMarketRepository
 from src.service import TaifexCrawlerService
@@ -126,6 +128,7 @@ class CrawlerTests(TestCase):
                 "TAIFEX_DAY_URL": "https://day.example",
                 "TAIFEX_NIGHT_URL": "https://night.example",
                 "TAIFEX_FUTURE_URL": "https://future.example",
+                "TWSE_TAIEX_URL": "https://twse.example",
             },
             clear=True,
         ):
@@ -137,6 +140,7 @@ class CrawlerTests(TestCase):
         self.assertEqual(config.day_url, "https://day.example")
         self.assertEqual(config.night_url, "https://night.example")
         self.assertEqual(config.future_url, "https://future.example")
+        self.assertEqual(config.twse_taiex_url, "https://twse.example")
 
     def test_transformer_converts_nan_to_none(self):
         df = pd.DataFrame(
@@ -282,6 +286,29 @@ class CrawlerTests(TestCase):
         # Verify bulk_write was called with correct number of operations
         self.assertEqual(len(fake_collection.bulk_operations), 2)
 
+    def test_repository_save_twse_taiex(self):
+        fake_collection = FakeCollection()
+
+        with patch("pymongo.MongoClient") as mock_client:
+            mock_client.return_value.__enter__.return_value.__getitem__.return_value.__getitem__.return_value = fake_collection
+
+            repo = MongoMarketRepository("mongodb://localhost", "test_db", "test_col")
+            repo.save_twse_taiex(
+                date="2025/01/03",
+                close_index=22300.33,
+                source_url="https://twse.example.com",
+            )
+
+        # Check update was made
+        self.assertEqual(len(fake_collection.update_calls), 1)
+        filt, payload, upsert = fake_collection.update_calls[0]
+        self.assertEqual(filt, {"session": "twse_taiex"})
+        self.assertTrue(upsert)
+        self.assertEqual(payload["$set"]["session"], "twse_taiex")
+        self.assertEqual(payload["$set"]["trade_date"], "2025/01/03")
+        self.assertEqual(payload["$set"]["收盤指數"], 22300.33)
+        self.assertEqual(payload["$set"]["source_url"], "https://twse.example.com")
+
 
 class FetcherParsingTests(TestCase):
     @patch("src.fetcher.requests.get")
@@ -333,6 +360,95 @@ class FetcherParsingTests(TestCase):
         self.assertEqual(trade_date, "2025/01/01")
         self.assertEqual(len(df), 1)
         self.assertEqual(df.iloc[0]["市場時段"], "夜盤")
+
+
+class TwseFetcherTests(TestCase):
+    @patch("src.fetcher.requests.get")
+    def test_fetch_latest_close_index_uses_max_date(self, mock_get):
+        html = """
+        <html><body>
+        <table>
+          <tr><th>日期</th><th>收盤指數</th></tr>
+          <tr><td>2025/01/01</td><td>22,000.11</td></tr>
+          <tr><td>2025/01/02</td><td>22,100.22</td></tr>
+          <tr><td>2025/01/03</td><td>22,300.33</td></tr>
+        </table>
+        </body></html>
+        """
+        response = Mock()
+        response.text = html
+        response.raise_for_status = Mock()
+        mock_get.return_value = response
+
+        result = TwseTaiexFetcher().fetch_latest_close_index(
+            "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?response=html"
+        )
+
+        self.assertEqual(result["date"], "2025/01/03")
+        self.assertEqual(result["close_index"], 22300.33)
+
+    @patch("src.fetcher.requests.Session")
+    @patch("src.fetcher.requests.get")
+    def test_fetch_latest_close_index_retries_without_proxy_on_proxy_error(self, mock_get, mock_session_cls):
+        html = """
+        <html><body>
+        <table>
+          <tr><th>日期</th><th>收盤指數</th></tr>
+          <tr><td>2025/01/03</td><td>22,300.33</td></tr>
+        </table>
+        </body></html>
+        """
+
+        mock_get.side_effect = ProxyError("proxy blocked")
+
+        fallback_response = Mock()
+        fallback_response.text = html
+        fallback_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.get.return_value = fallback_response
+        mock_session_cls.return_value = mock_session
+
+        result = TwseTaiexFetcher().fetch_latest_close_index(
+            "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?response=html"
+        )
+
+        self.assertFalse(mock_session.trust_env)
+        mock_session.get.assert_called_once()
+        self.assertEqual(result["date"], "2025/01/03")
+        self.assertEqual(result["close_index"], 22300.33)
+
+    @patch("src.fetcher.requests.Session")
+    @patch("src.fetcher.requests.get")
+    def test_fetch_latest_close_index_retries_on_connection_error(self, mock_get, mock_session_cls):
+        """Test that ConnectionError (DNS failure, etc.) triggers proxy fallback."""
+        html = """
+        <html><body>
+        <table>
+          <tr><th>日期</th><th>收盤指數</th></tr>
+          <tr><td>2025/01/03</td><td>22,300.33</td></tr>
+        </table>
+        </body></html>
+        """
+
+        mock_get.side_effect = ConnectionError("DNS resolution failed")
+
+        fallback_response = Mock()
+        fallback_response.text = html
+        fallback_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.get.return_value = fallback_response
+        mock_session_cls.return_value = mock_session
+
+        result = TwseTaiexFetcher().fetch_latest_close_index(
+            "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?response=html"
+        )
+
+        self.assertFalse(mock_session.trust_env)
+        mock_session.get.assert_called_once()
+        self.assertEqual(result["date"], "2025/01/03")
+        self.assertEqual(result["close_index"], 22300.33)
 
 
 if __name__ == "__main__":

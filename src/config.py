@@ -9,7 +9,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class CrawlerConfig:
-    """Configuration for TAIFEX crawler."""
+    """Configuration for TAIFEX and TWSE crawler."""
 
     mongo_uri: str
     mongo_db: str
@@ -17,6 +17,7 @@ class CrawlerConfig:
     day_url: str
     night_url: str
     future_url: str
+    twse_taiex_url: str
 
     @classmethod
     def from_env(cls) -> CrawlerConfig:
@@ -63,6 +64,10 @@ class CrawlerConfig:
         if not future_url:
             raise RuntimeError("TAIFEX_FUTURE_URL environment variable is required")
 
+        twse_taiex_url = os.getenv("TWSE_TAIEX_URL")
+        if not twse_taiex_url:
+            raise RuntimeError("TWSE_TAIEX_URL environment variable is required")
+
         return cls(
             mongo_uri=mongo_uri,
             mongo_db=mongo_db,
@@ -70,4 +75,5 @@ class CrawlerConfig:
             day_url=day_url,
             night_url=night_url,
             future_url=future_url,
+            twse_taiex_url=twse_taiex_url,
         )
