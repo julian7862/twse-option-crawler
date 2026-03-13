@@ -186,10 +186,10 @@ class MongoMarketRepository:
 
             # Execute bulk write if there are operations
             if operations:
-                result = collection.bulk_write(operations, ordered=False)
-                return result.upserted_count + result.modified_count
+                collection.bulk_write(operations, ordered=False)
 
-            return 0
+            # Return count of records that passed filtering (sent to DB)
+            return len(operations)
 
     @staticmethod
     def _is_pure_month_value(month_str: str) -> bool:
