@@ -149,6 +149,17 @@ MONGO_URI=mongodb://localhost:27017
 MONGO_URI=<paste-your-atlas-connection-string-here>
 ```
 
+## 📈 抓取 TWSE 大盤「最新日期收盤指數」
+
+若您要抓取 TWSE「大盤統計資訊」頁面的**最大日期（最新日期）**之「收盤指數」，可直接執行：
+
+```bash
+python twse_taiex_latest.py
+```
+
+程式會自動從 `https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?response=html` 讀取表格，
+挑選日期最大的那一列（例如 1/1、1/2、1/3 會選 1/3），並輸出該列的收盤指數。
+
 ## 🧪 執行測試
 
 本專案包含完整的單元測試，涵蓋配置載入、資料轉換、爬蟲服務與資料庫操作。
