@@ -1,6 +1,6 @@
 # TAIFEX 台指選擇權爬蟲
 
-自動抓取台灣期貨交易所（TAIFEX）每日選擇權市場資料（日盤/夜盤），並儲存至 MongoDB。支援本地開發與 GitHub Actions 自動排程執行。
+自動抓取台灣期貨交易所（TAIFEX）每日選擇權與期貨市場資料（日盤/夜盤），並儲存至 MongoDB。支援本地開發與 GitHub Actions 自動排程執行。
 
 ## 📋 目錄
 
@@ -15,9 +15,11 @@
 
 ## ✨ 功能特色
 
-- **自動爬取**：抓取 TAIFEX 日盤與夜盤選擇權每日行情表
+- **自動爬取**：抓取 TAIFEX 日盤與夜盤選擇權每日行情表，以及期貨月份資料
+- **智慧過濾**：僅儲存月選擇權（排除週選擇權 W1/W2/F1），並以期貨月份進行資料驗證
 - **資料清洗**：自動解析 HTML 表格，轉換為結構化資料
-- **MongoDB 儲存**：以 `trade_date + session` 為唯一鍵，支援 upsert 更新
+- **細緻儲存**：採用細緻化資料結構（每筆選擇權紀錄獨立儲存），方便後續分析
+- **MongoDB 儲存**：使用複合唯一索引，確保資料完整性
 - **環境彈性**：支援本地 `.env` 檔案與 CI/CD 環境變數
 - **Clean Architecture**：清晰的分層架構，易於維護與測試
 - **完整測試**：包含單元測試，確保程式品質
@@ -115,7 +117,13 @@ python main.py
 執行成功後會顯示：
 
 ```
-Stored day(XXX) + night(XXX) rows to MongoDB.
+Crawling futures data...
+Future months: [202603, 202604, 202605]
+Crawling options data...
+Stored XXX day option records.
+Stored XXX night option records.
+Stored X future month records.
+Total: day(XXX) + night(XXX) option records.
 ```
 
 ## ⚙️ 環境變數設定
@@ -127,6 +135,7 @@ Stored day(XXX) + night(XXX) rows to MongoDB.
 | `MONGO_COLLECTION` | ❌ | `taifex_option_daily` | Collection 名稱 |
 | `TAIFEX_DAY_URL` | ❌ | TAIFEX 官方日盤網址 | 日盤資料來源 URL |
 | `TAIFEX_NIGHT_URL` | ❌ | TAIFEX 官方夜盤網址 | 夜盤資料來源 URL |
+| `TAIFEX_FUTURE_URL` | ❌ | TAIFEX 官方期貨網址 | 期貨資料來源 URL |
 
 ### MongoDB 連線範例
 
@@ -219,30 +228,48 @@ OK
 
 ### MongoDB 儲存結構
 
+本系統採用細緻化儲存架構，分為兩種文件類型：
+
+#### 1. 期貨月份文件（用於驗證選擇權資料）
+
 ```json
 {
+  "session": "future_month",
+  "期貨月份": 202603,
   "trade_date": "2026/03/06",
-  "session": "day",
-  "source_url": "https://www.taifex.com.tw/cht/3/optDailyMarketExcel",
-  "fetched_at": "2026-03-06T10:30:00.000Z",
-  "row_count": 150,
-  "rows": [
-    {
-      "履約價": 23000,
-      "買進價": 150.5,
-      "賣出價": 151.0,
-      "成交價": 150.8,
-      "成交量": 1234,
-      "交易日": "2026-03-06T00:00:00",
-      "市場時段": "日盤"
-    }
-  ]
+  "source_url": "https://www.taifex.com.tw/cht/3/futContractsDate",
+  "fetched_at": "2026-03-06T10:30:00.000Z"
 }
 ```
 
-### 唯一索引
+**唯一索引**：`期貨月份`（僅適用於 `session: "future_month"` 的文件）
 
-系統會自動建立複合索引：`{ trade_date: 1, session: 1 }`，確保同一交易日與時段的資料不會重複。
+#### 2. 選擇權紀錄文件（每筆選擇權獨立儲存）
+
+```json
+{
+  "session": "day",
+  "期貨月份": 202603,
+  "履約價": 23000,
+  "買賣權": "Call",
+  "trade_date": "2026/03/06",
+  "source_url": "https://www.taifex.com.tw/cht/3/optDailyMarketExcel",
+  "fetched_at": "2026-03-06T10:30:00.000Z",
+  "契約": "TXO",
+  "成交價": 150.8,
+  "成交量": 1234,
+  "未平倉量": 5678,
+  "交易日": "2026-03-06T00:00:00"
+}
+```
+
+**唯一索引**：`{ session, 期貨月份, 履約價, 買賣權 }`（複合索引，僅適用於 `session: "day"` 或 `"night"` 的文件）
+
+### 資料過濾規則
+
+1. **僅儲存月選擇權**：排除週選擇權（帶有 W1、W2、F1 等後綴）
+2. **期貨月份驗證**：僅儲存存在於期貨資料中的有效月份
+3. **欄位名稱標準化**：自動移除欄位名稱中的空格（例如：`到期月份(週別)` → `期貨月份`）
 
 ## 🛠️ 開發建議
 
